@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { wordCount } from "@/utils/text";
+import PdfCanvasViewer from "@/components/PdfCanvasViewer";
 
 interface ResumeComparisonProps {
   originalFile: File;
-  originalText: string;
   optimizedText: string;
   filename: string;
   photo?: string | null;
@@ -33,6 +33,7 @@ export default function ResumeComparison({
 
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
+  const syncingScrollRef = useRef(false);
 
   // Original PDF (uploaded file)
   useEffect(() => {
@@ -71,6 +72,24 @@ export default function ResumeComparison({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [optimizedText, filename]);
 
+  const syncScroll = (source: "left" | "right") => {
+    if (syncingScrollRef.current) return;
+
+    const sourceEl = source === "left" ? leftRef.current : rightRef.current;
+    const targetEl = source === "left" ? rightRef.current : leftRef.current;
+    if (!sourceEl || !targetEl) return;
+
+    const sourceMax = sourceEl.scrollHeight - sourceEl.clientHeight;
+    const targetMax = targetEl.scrollHeight - targetEl.clientHeight;
+    const ratio = sourceMax > 0 ? sourceEl.scrollTop / sourceMax : 0;
+
+    syncingScrollRef.current = true;
+    targetEl.scrollTop = targetMax > 0 ? ratio * targetMax : 0;
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+  };
+
   const optWords = wordCount(optimizedText);
 
   return (
@@ -95,54 +114,26 @@ export default function ResumeComparison({
         </span>
       </div>
 
-      {/* ── Side-by-side: PDF iframes with overlay-based sync scroll ── */}
+      {/* ── Side-by-side: synchronized PDF canvases ── */}
       {tab === "side-by-side" && (
-        pdfLoading ? (
-          <div className="flex items-center justify-center gap-3 rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500" style={{ height: 700 }}>
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500" />
-            Generating PDF…
-          </div>
-        ) : pdfError ? (
-          <div className="flex items-center justify-center rounded-xl border border-red-200 bg-red-50 text-sm text-red-500 px-6 text-center" style={{ height: 700 }}>
-            {pdfError}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {[
-              { url: originalPdfUrl,  label: "Original Resume",  ref: leftRef,  accent: false },
-              { url: optimizedPdfUrl, label: "Optimized Resume", ref: rightRef, accent: true  },
-            ].map(({ url, label, ref, accent }) => (
-              <div key={label} className={`rounded-xl border ${accent ? "border-blue-200" : "border-gray-200"} overflow-hidden flex flex-col h-[700px]`}>
-                <div className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide border-b flex-shrink-0 ${accent ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-gray-50 text-gray-600 border-gray-200"}`}>
-                  {label}
-                </div>
-                {/* Relative wrapper so the overlay can cover the iframe */}
-                <div className="flex-1 relative" ref={ref}>
-                  {url && (
-                    <>
-                      <iframe
-                        src={`${url}#toolbar=0&navpanes=0&scrollbar=0`}
-                        style={{ width: "100%", height: "100%", display: "block", border: "none" }}
-                        title={label}
-                      />
-                      {/* Transparent overlay — captures wheel events before the PDF viewer
-                          does, then drives both iframes' contentWindow in sync */}
-                      <div
-                        style={{ position: "absolute", inset: 0, zIndex: 10, cursor: "default" }}
-                        onWheel={(e) => {
-                          e.preventDefault();
-                          const delta = e.deltaY;
-                          leftRef.current?.querySelector("iframe")?.contentWindow?.scrollBy(0, delta);
-                          rightRef.current?.querySelector("iframe")?.contentWindow?.scrollBy(0, delta);
-                        }}
-                      />
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <PdfCanvasViewer
+            url={originalPdfUrl}
+            label="Original Resume"
+            loading={!originalPdfUrl}
+            viewportRef={leftRef}
+            onViewportScroll={() => syncScroll("left")}
+          />
+          <PdfCanvasViewer
+            url={optimizedPdfUrl}
+            label="Optimized Resume"
+            accent
+            loading={pdfLoading}
+            error={pdfError}
+            viewportRef={rightRef}
+            onViewportScroll={() => syncScroll("right")}
+          />
+        </div>
       )}
 
       {/* ── Solo tabs: actual PDF viewer ── */}

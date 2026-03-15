@@ -278,7 +278,6 @@ export default function HomePage() {
             {/* Comparison */}
             <ResumeComparison
               originalFile={resumeFile!}
-              originalText={result.originalText}
               optimizedText={result.optimizedText}
               filename={result.filename}
               photo={result.photo}
